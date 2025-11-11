@@ -1,7 +1,7 @@
 package config
 
 import (
-	"doku/app/utils/helper"
+	"github.com/faizauthar12/doku/app/utils/helper"
 	"log"
 	"net/http"
 	"os"

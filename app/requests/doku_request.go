@@ -1,6 +1,6 @@
 package requests
 
-import "doku/app/models"
+import "github.com/faizauthar12/doku/app/models"
 
 type DokuCreateSubAccountHTTPRequest struct {
 	Account DokuCreateSubAccountAccount `json:"account"`
@@ -26,8 +26,16 @@ type DokuCreatePaymentHTTPRequest struct {
 }
 
 type DokuCreatePaymentRequest struct {
-	Amount        int64  `json:"amount"`
-	CustomerName  string `json:"customer_name"`
-	CustomerEmail string `json:"customer_email"`
-	SacID         string `json:"SacID"`
+	Amount         int64  `json:"amount"`
+	CustomerName   string `json:"customer_name"`
+	CustomerEmail  string `json:"customer_email"`
+	SacID          string `json:"SacID"`
+	PaymentDueDate int64  `json:"payment_due_date,omitempty"`
+}
+
+type DokuNotificationRequest struct {
+	RequestID        string `json:"Request-Id"`
+	RequestTimestamp string `json:"Request-Timestamp"`
+	Signature        string `json:"Signature"`
+	JsonBody         []byte `json:"Json-Body"`
 }

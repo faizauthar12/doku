@@ -1,10 +1,7 @@
 package main
 
 import (
-	"doku/app/config"
-	"doku/app/usecases"
-	"encoding/json"
-	"fmt"
+	"github.com/faizauthar12/doku/app/config"
 )
 
 func init() {
@@ -12,8 +9,8 @@ func init() {
 }
 
 func main() {
-	cfg := config.Get()
-	dokuUseCase := usecases.NewDokuUseCase(cfg.Doku.ClientID, cfg.Doku.SecretKey)
+	//cfg := config.Get()
+	//dokuUseCase := usecases.NewDokuUseCase(cfg.Doku.ClientID, cfg.Doku.SecretKey)
 
 	// // Create Sub Account
 	//dokuCreateSubAccountRequest := &requests.DokuCreateSubAccountRequest{
@@ -30,10 +27,11 @@ func main() {
 
 	//// Create Payment
 	//dokuCreatePaymentRequest := &requests.DokuCreatePaymentRequest{
-	//	Amount:        100000,
-	//	CustomerName:  "Faiz Authar",
-	//	CustomerEmail: "faiz+customer1@gmail.com",
-	//	SacID:         "SAC-8760-1762081713175",
+	//	Amount:         100000,
+	//	CustomerName:   "Faiz Authar",
+	//	CustomerEmail:  "faizauthar+customer1@gmail.com",
+	//	SacID:          "SAC-8760-1762081713175",
+	//	PaymentDueDate: 60,
 	//}
 	//
 	//resultCreatePayment, logData := dokuUseCase.AcceptPayment(dokuCreatePaymentRequest)
@@ -41,17 +39,19 @@ func main() {
 	//	panic(logData)
 	//}
 	//
-	//fmt.Printf("Result Create Payment: %+v\n", resultCreatePayment)
-
-	// Get Balance
-	dokuSacID := "SAC-8760-1762081713175"
-
-	resultGetBalance, logData := dokuUseCase.GetBalance(dokuSacID)
-	if logData != nil {
-		panic(logData)
-	}
-
-	resultGetBalanceJson, _ := json.Marshal(resultGetBalance)
-
-	fmt.Printf("Result Get Balance: %s\n", string(resultGetBalanceJson))
+	//resultCreatePaymentJson, _ := json.Marshal(resultCreatePayment)
+	//
+	//fmt.Printf("Result Create Payment: %s\n", string(resultCreatePaymentJson))
+	//
+	//// Get Balance
+	//dokuSacID := "SAC-8760-1762081713175"
+	//
+	//resultGetBalance, logData := dokuUseCase.GetBalance(dokuSacID)
+	//if logData != nil {
+	//	panic(logData)
+	//}
+	//
+	//resultGetBalanceJson, _ := json.Marshal(resultGetBalance)
+	//
+	//fmt.Printf("Result Get Balance: %s\n", string(resultGetBalanceJson))
 }

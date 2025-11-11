@@ -1,8 +1,8 @@
 package helper
 
 import (
-	"doku/app/models"
 	"fmt"
+	"github.com/faizauthar12/doku/app/models"
 	"net/http"
 	"runtime"
 	"strings"

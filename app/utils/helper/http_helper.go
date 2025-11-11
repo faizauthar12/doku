@@ -3,9 +3,9 @@ package helper
 import (
 	"bytes"
 	"crypto/tls"
-	"doku/app/models"
 	"encoding/base64"
 	"fmt"
+	"github.com/faizauthar12/doku/app/models"
 	"io"
 	"net/http"
 	"net/url"

@@ -3,24 +3,27 @@ package usecases
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"doku/app/config"
-	"doku/app/models"
-	"doku/app/requests"
-	"doku/app/responses"
-	"doku/app/utils/helper"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/faizauthar12/doku/app/config"
+	"github.com/faizauthar12/doku/app/models"
+	"github.com/faizauthar12/doku/app/requests"
+	"github.com/faizauthar12/doku/app/responses"
+	"github.com/faizauthar12/doku/app/utils/helper"
+
 	"github.com/google/uuid"
+	"github.com/guregu/null/v6"
 )
 
 type DokuUseCaseInterface interface {
 	CreateAccount(request *requests.DokuCreateSubAccountRequest) (*responses.DokuCreateSubAccountAccountResponse, *models.ErrorLog)
 	AcceptPayment(request *requests.DokuCreatePaymentRequest) (*responses.DokuCreatePaymentHTTPResponse, *models.ErrorLog)
 	GetBalance(sacID string) (*responses.DokuGetBalanceHTTPResponse, *models.ErrorLog)
+	HandleNotification(request *requests.DokuNotificationRequest) (*responses.DokuPostNotificationHTTPResponse, *models.ErrorLog)
 }
 
 type dokuUseCase struct {
@@ -102,6 +105,48 @@ func (u *dokuUseCase) createSignatureComponent(
 	return signature, nil
 }
 
+func (u *dokuUseCase) verifySignatureComponent(
+	signature string,
+	requestId string,
+	requestTimestamp string,
+	requestTarget string,
+	jsonBody []byte,
+) (bool, *models.ErrorLog) {
+
+	// Format timestamp
+	timestamp, err := time.Parse("2006-01-02T15:04:05Z", requestTimestamp)
+	if err != nil {
+		errorMessage := fmt.Sprintf("Invalid request timestamp format")
+		logData := helper.WriteLog(err, http.StatusBadRequest, errorMessage)
+		return false, logData
+	}
+
+	// Calculate Digest - only for POST/PUT methods with body
+	// For GET requests, jsonBody will be nil and digest will be empty
+	var digest string
+	if jsonBody != nil && len(jsonBody) > 0 {
+		hash := sha256.Sum256(jsonBody)
+		digest = base64.StdEncoding.EncodeToString(hash[:])
+	}
+
+	signatureComponents := fmt.Sprintf(
+		"Client-Id:%s\nRequest-Id:%s\nRequest-Timestamp:%s\nRequest-Target:%s\nDigest:%s",
+		u.DokuAPIClientID,
+		requestId,
+		timestamp,
+		requestTarget,
+		digest,
+	)
+
+	if signature != signatureComponents {
+		errorMessage := fmt.Sprintf("Signature does not match")
+		logData := helper.WriteLog(fmt.Errorf(errorMessage), http.StatusUnauthorized, errorMessage)
+		return false, logData
+	}
+
+	return true, nil
+}
+
 func (u *dokuUseCase) CreateAccount(request *requests.DokuCreateSubAccountRequest) (*responses.DokuCreateSubAccountAccountResponse, *models.ErrorLog) {
 
 	createAccountPayload := &requests.DokuCreateSubAccountHTTPRequest{
@@ -152,6 +197,19 @@ func (u *dokuUseCase) CreateAccount(request *requests.DokuCreateSubAccountReques
 		return nil, logData
 	}
 
+	if createAccountAPI.StatusCode != http.StatusOK {
+		dokuErrorResponse := &responses.DokuErrorHTTPResponse{}
+		err = json.Unmarshal(createAccountAPI.Body, &dokuErrorResponse)
+		if err != nil {
+			logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to unmarshal create payment error response")
+			return nil, logData
+		}
+
+		errorMessage := fmt.Sprintf("Doku Create Sub Account API Error: %v", dokuErrorResponse.Message)
+		logData := helper.WriteLog(fmt.Errorf(errorMessage), createAccountAPI.StatusCode, errorMessage)
+		return nil, logData
+	}
+
 	var createAccountResponse *responses.DokuCreateSubAccountHTTPResponse
 	err = json.Unmarshal(createAccountAPI.Body, &createAccountResponse)
 	if err != nil {
@@ -168,19 +226,19 @@ func (u *dokuUseCase) AcceptPayment(request *requests.DokuCreatePaymentRequest) 
 
 	createPaymentPayload := &requests.DokuCreatePaymentHTTPRequest{
 		Order: &models.DokuOrder{
-			InvoiceNumber: invoiceNumber,
-			Amount:        request.Amount,
+			InvoiceNumber: null.StringFrom(invoiceNumber),
+			Amount:        null.IntFrom(request.Amount),
 		},
 		Payment: &models.DokuPayment{
-			PaymentDueDate: 60,
+			PaymentDueDate: null.IntFrom(request.PaymentDueDate),
 		},
 		Customer: &models.DokuCustomer{
-			Name:  request.CustomerName,
-			Email: request.CustomerEmail,
+			Name:  null.StringFrom(request.CustomerName),
+			Email: null.StringFrom(request.CustomerEmail),
 		},
 		AdditionalInfo: &models.DokuAdditionalInfo{
 			Account: models.DokuAccount{
-				ID: request.SacID,
+				ID: null.StringFrom(request.SacID),
 			},
 		},
 	}
@@ -222,6 +280,19 @@ func (u *dokuUseCase) AcceptPayment(request *requests.DokuCreatePaymentRequest) 
 
 	if createPaymentAPI.Error != nil {
 		logData := helper.WriteLog(createPaymentAPI.Error, createPaymentAPI.StatusCode, helper.DefaultStatusText[createPaymentAPI.StatusCode])
+		return nil, logData
+	}
+
+	if createPaymentAPI.StatusCode != http.StatusOK {
+		dokuErrorResponse := &responses.DokuErrorHTTPResponse{}
+		err = json.Unmarshal(createPaymentAPI.Body, &dokuErrorResponse)
+		if err != nil {
+			logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to unmarshal create payment error response")
+			return nil, logData
+		}
+
+		errorMessage := fmt.Sprintf("Doku Create Payment API Error: %v", dokuErrorResponse.Message)
+		logData := helper.WriteLog(fmt.Errorf(errorMessage), createPaymentAPI.StatusCode, errorMessage)
 		return nil, logData
 	}
 
@@ -271,6 +342,19 @@ func (u *dokuUseCase) GetBalance(sacID string) (*responses.DokuGetBalanceHTTPRes
 		return nil, logData
 	}
 
+	if getBalanceAPI.StatusCode != http.StatusOK {
+		dokuErrorResponse := &responses.DokuErrorHTTPResponse{}
+		err := json.Unmarshal(getBalanceAPI.Body, &dokuErrorResponse)
+		if err != nil {
+			logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to unmarshal get balance error response")
+			return nil, logData
+		}
+
+		errorMessage := fmt.Sprintf("Doku Get Balance API Error: %v", dokuErrorResponse.Message)
+		logData := helper.WriteLog(fmt.Errorf(errorMessage), getBalanceAPI.StatusCode, errorMessage)
+		return nil, logData
+	}
+
 	var getBalanceResponse *responses.DokuGetBalanceHTTPResponse
 	err := json.Unmarshal(getBalanceAPI.Body, &getBalanceResponse)
 	if err != nil {
@@ -281,4 +365,35 @@ func (u *dokuUseCase) GetBalance(sacID string) (*responses.DokuGetBalanceHTTPRes
 	//fmt.Printf("Get Balance Response: %+v\n", getBalanceResponse)
 
 	return getBalanceResponse, nil
+}
+
+func (u *dokuUseCase) HandleNotification(request *requests.DokuNotificationRequest) (*responses.DokuPostNotificationHTTPResponse, *models.ErrorLog) {
+
+	// verifying signature components
+	isValid, logData := u.verifySignatureComponent(
+		request.Signature,
+		request.RequestID,
+		request.RequestTimestamp,
+		"/checkout/v1/notification",
+		request.JsonBody,
+	)
+
+	if logData != nil {
+		return nil, logData
+	}
+
+	if !isValid {
+		errorMessage := fmt.Sprintf("Invalid signature in notification")
+		logData := helper.WriteLog(fmt.Errorf(errorMessage), http.StatusUnauthorized, errorMessage)
+		return nil, logData
+	}
+
+	notificationResponse := &responses.DokuPostNotificationHTTPResponse{}
+	err := json.Unmarshal(request.JsonBody, &notificationResponse)
+	if err != nil {
+		logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to unmarshal notification body")
+		return nil, logData
+	}
+
+	return notificationResponse, nil
 }
