@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/faizauthar12/doku/app/config"
@@ -24,20 +26,25 @@ type DokuUseCaseInterface interface {
 	AcceptPayment(request *requests.DokuCreatePaymentRequest) (*responses.DokuCreatePaymentHTTPResponse, *models.ErrorLog)
 	GetBalance(sacID string) (*responses.DokuGetBalanceHTTPResponse, *models.ErrorLog)
 	HandleNotification(request *requests.DokuNotificationRequest) (*responses.DokuPostNotificationHTTPResponse, *models.ErrorLog)
+	GetToken() (*responses.GetTokenResponse, *models.ErrorLog)
+	BankAccountInquiry(request *requests.DokuBankAccountInquiryRequest, accessToken string) (*responses.BankAccountInquiryResponse, *models.ErrorLog)
 }
 
 type dokuUseCase struct {
 	DokuAPIClientID  string
 	DokuAPISecretKey string
+	DokuPrivateKey   string
 }
 
 func NewDokuUseCase(
 	dokuAPIClientID string,
 	dokuAPISecretKey string,
+	dokuPrivateKey string,
 ) DokuUseCaseInterface {
 	return &dokuUseCase{
 		DokuAPIClientID:  dokuAPIClientID,
 		DokuAPISecretKey: dokuAPISecretKey,
+		DokuPrivateKey:   dokuPrivateKey,
 	}
 }
 
@@ -61,7 +68,7 @@ func (u *dokuUseCase) createSignatureComponent(
 
 	if u.DokuAPIClientID == "" {
 		errorMessage := fmt.Sprintf("DokuClientId is empty")
-		logData := helper.WriteLog(fmt.Errorf(errorMessage), http.StatusInternalServerError, errorMessage)
+		logData := helper.WriteLog(errors.New(errorMessage), http.StatusInternalServerError, errorMessage)
 		return "", logData
 	}
 
@@ -140,7 +147,7 @@ func (u *dokuUseCase) verifySignatureComponent(
 
 	if signature != signatureComponents {
 		errorMessage := fmt.Sprintf("Signature does not match")
-		logData := helper.WriteLog(fmt.Errorf(errorMessage), http.StatusUnauthorized, errorMessage)
+		logData := helper.WriteLog(errors.New(errorMessage), http.StatusUnauthorized, errorMessage)
 		return false, logData
 	}
 
@@ -206,7 +213,7 @@ func (u *dokuUseCase) CreateAccount(request *requests.DokuCreateSubAccountReques
 		}
 
 		errorMessage := fmt.Sprintf("Doku Create Sub Account API Error: %v", dokuErrorResponse.Message)
-		logData := helper.WriteLog(fmt.Errorf(errorMessage), createAccountAPI.StatusCode, errorMessage)
+		logData := helper.WriteLog(fmt.Errorf("Doku Create Sub Account API Error: %v", dokuErrorResponse.Message), createAccountAPI.StatusCode, errorMessage)
 		return nil, logData
 	}
 
@@ -292,7 +299,7 @@ func (u *dokuUseCase) AcceptPayment(request *requests.DokuCreatePaymentRequest) 
 		}
 
 		errorMessage := fmt.Sprintf("Doku Create Payment API Error: %v", dokuErrorResponse.Message)
-		logData := helper.WriteLog(fmt.Errorf(errorMessage), createPaymentAPI.StatusCode, errorMessage)
+		logData := helper.WriteLog(fmt.Errorf("Doku Create Payment API Error: %v", dokuErrorResponse.Message), createPaymentAPI.StatusCode, errorMessage)
 		return nil, logData
 	}
 
@@ -351,7 +358,7 @@ func (u *dokuUseCase) GetBalance(sacID string) (*responses.DokuGetBalanceHTTPRes
 		}
 
 		errorMessage := fmt.Sprintf("Doku Get Balance API Error: %v", dokuErrorResponse.Message)
-		logData := helper.WriteLog(fmt.Errorf(errorMessage), getBalanceAPI.StatusCode, errorMessage)
+		logData := helper.WriteLog(fmt.Errorf("Doku Get Balance API Error: %v", dokuErrorResponse.Message), getBalanceAPI.StatusCode, errorMessage)
 		return nil, logData
 	}
 
@@ -384,7 +391,7 @@ func (u *dokuUseCase) HandleNotification(request *requests.DokuNotificationReque
 
 	if !isValid {
 		errorMessage := fmt.Sprintf("Invalid signature in notification")
-		logData := helper.WriteLog(fmt.Errorf(errorMessage), http.StatusUnauthorized, errorMessage)
+		logData := helper.WriteLog(errors.New(errorMessage), http.StatusUnauthorized, errorMessage)
 		return nil, logData
 	}
 
@@ -396,4 +403,115 @@ func (u *dokuUseCase) HandleNotification(request *requests.DokuNotificationReque
 	}
 
 	return notificationResponse, nil
+}
+
+func (u *dokuUseCase) GetToken() (*responses.GetTokenResponse, *models.ErrorLog) {
+	xTimestamp := time.Now().UTC().Format("2006-01-02T15:04:05-07:00")
+	fmt.Printf("X-Timestamp: %s\n", xTimestamp)
+	xSignature, err := generateGetTokenSignature(u.DokuPrivateKey, xTimestamp, u.DokuAPIClientID)
+	if err != nil {
+		logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to generate get token signature")
+		return nil, logData
+	}
+
+	requestBody := map[string]string{
+		"grantType": "client_credentials",
+	}
+	requestBodyJson, err := json.Marshal(requestBody)
+	if err != nil {
+		logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to marshal get token request body")
+		return nil, logData
+	}
+
+	response := helper.POST(&helper.Options{
+		Method: "POST",
+		URL:    "https://api-sandbox.doku.com/authorization/v1/access-token/b2b",
+		Headers: map[string]string{
+			"X-Timestamp":  xTimestamp,
+			"X-Signature":  xSignature,
+			"X-Client-Key": u.DokuAPIClientID,
+			"Content-Type": "application/json",
+		},
+		IsPrintCurl: true,
+		Body:        requestBodyJson,
+	})
+
+	if response.StatusCode != http.StatusOK {
+		dokuErrorResponse := &responses.DokuErrorHTTPResponse{}
+		err = json.Unmarshal(response.Body, &dokuErrorResponse)
+		if err != nil {
+			logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to unmarshal create payment error response")
+			return nil, logData
+		}
+		logData := helper.WriteLog(fmt.Errorf("Get Token Response Error: %v, Body: %v", response.Error, dokuErrorResponse.Message), response.StatusCode, "Failed to get token from Doku")
+		return nil, logData
+	}
+
+	fmt.Printf("Get Token Response Body: %s\n", string(response.Body))
+	var getTokenResponse *responses.GetTokenResponse
+
+	err = json.Unmarshal(response.Body, &getTokenResponse)
+	if err != nil {
+		logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to unmarshal get token response")
+		return nil, logData
+	}
+
+	return getTokenResponse, nil
+}
+
+func (u *dokuUseCase) BankAccountInquiry(request *requests.DokuBankAccountInquiryRequest, accessToken string) (*responses.BankAccountInquiryResponse, *models.ErrorLog) {
+	xTimestamp := time.Now().UTC().Format(time.RFC3339)
+	xTimestamp = strings.TrimSpace(xTimestamp)
+	fmt.Printf("X-Timestamp: '%s'\n", xTimestamp)
+
+	requestBodyBytes, err := json.Marshal(request)
+	if err != nil {
+		logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to marshal bank account inquiry request body")
+		return nil, logData
+	}
+	fmt.Printf("Request Body: %s\n", string(requestBodyBytes))
+
+	xSignature, err := generateKirimDokuRequestSignature(u.DokuAPISecretKey, "POST", "/snap/v1.1/emoney/bank-account-inquiry", accessToken, xTimestamp, requestBodyBytes)
+	if err != nil {
+		logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to generate bank account inquiry signature")
+		return nil, logData
+	}
+
+	xExternalID := uuid.NewString()
+
+	response := helper.POST(&helper.Options{
+		Method: "POST",
+		URL:    "https://api-sandbox.doku.com/snap/v1.1/emoney/bank-account-inquiry",
+		Headers: map[string]string{
+			"Authorization": "Bearer " + accessToken,
+			"X-TIMESTAMP":   xTimestamp,
+			"X-SIGNATURE":   xSignature,
+			"X-EXTERNAL-ID": xExternalID,
+			"CHANNEL-ID":    "H2H",
+			"X-PARTNER-ID":  u.DokuAPIClientID,
+			"Content-Type":  "application/json",
+		},
+		IsPrintCurl: true,
+		Body:        requestBodyBytes,
+	})
+	if response.StatusCode != http.StatusOK {
+		dokuErrorResponse := &responses.DokuErrorHTTPResponse{}
+		err = json.Unmarshal(response.Body, &dokuErrorResponse)
+		if err != nil {
+			logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to unmarshal bank account inquiry error response")
+			return nil, logData
+		}
+		logData := helper.WriteLog(fmt.Errorf("Bank Account Inquiry Response Error: %v, Body: %v", response.Error, dokuErrorResponse.Message), response.StatusCode, "Failed to get bank account inquiry from Doku")
+		return nil, logData
+	}
+
+	var bankAccountInquiryResponse *responses.BankAccountInquiryResponse
+
+	err = json.Unmarshal(response.Body, &bankAccountInquiryResponse)
+	if err != nil {
+		logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to unmarshal bank account inquiry response")
+		return nil, logData
+	}
+
+	return bankAccountInquiryResponse, nil
 }

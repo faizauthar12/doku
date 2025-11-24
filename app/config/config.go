@@ -1,20 +1,22 @@
 package config
 
 import (
-	"github.com/faizauthar12/doku/app/utils/helper"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/faizauthar12/doku/app/utils/helper"
+
 	"github.com/joho/godotenv"
 )
 
 type Configuration struct {
 	Doku struct {
-		ClientID  string
-		SecretKey string
+		ClientID   string
+		SecretKey  string
+		PrivateKey string
 	}
 }
 
@@ -61,8 +63,8 @@ func Get() Configuration {
 	return cfg
 }
 
-func InitConfig() {
-	err := godotenv.Load()
+func InitConfig(filenames ...string) {
+	err := godotenv.Load(filenames...)
 	if err != nil {
 		logData := helper.WriteLog(err, http.StatusInternalServerError, helper.DefaultStatusText[http.StatusInternalServerError])
 		log.Fatalf("Error loading .env file")
@@ -72,4 +74,5 @@ func InitConfig() {
 	// Doku Config
 	cfg.Doku.ClientID = GetEnvString("DOKU_API_CLIENT_ID", "")
 	cfg.Doku.SecretKey = GetEnvString("DOKU_API_SECRET_KEY", "")
+	cfg.Doku.PrivateKey = GetEnvString("DOKU_API_PRIVATE_KEY", "")
 }

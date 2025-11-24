@@ -119,3 +119,38 @@ type DokuPostNotificationHTTPResponse struct {
 		Source    null.String `json:"source,omitempty"`
 	}
 }
+
+type GetTokenResponse struct {
+	ResponseCode    string `json:"responseCode"`
+	ResponseMessage string `json:"responseMessage"`
+	AccessToken     string `json:"accessToken"`
+	TokenType       string `json:"tokenType"`
+	ExpiresIn       int    `json:"expiresIn"`
+	AdditionalInfo  string `json:"additionalInfo"`
+}
+
+type BankAccountInquiryResponse struct {
+	ResponseCode             int    `json:"responseCode"`
+	ResponseMessage          string `json:"responseMessage"`
+	ReferenceNo              string `json:"referenceNo"`
+	PartnerReferenceNo       string `json:"partnerReferenceNo"`
+	BeneficiaryAccountNumber string `json:"beneficiaryAccountNumber"`
+	BeneficiaryAccountName   string `json:"beneficiaryAccountName"`
+	BeneficiaryBankCode      string `json:"beneficiaryBankCode"`
+	BeneficiaryBankShortName string `json:"beneficiaryBankShortName"`
+	BeneficiaryBankName      string `json:"beneficiaryBankName"`
+	Amount                   struct {
+		Value    string `json:"value"`
+		Currency string `json:"currency"`
+	} `json:"amount"`
+	SessionID      string `json:"sessionId"`
+	AdditionalInfo struct {
+		SenderCountryCode   string `json:"senderCountryCode"`
+		ForexRate           string `json:"forexRate"`
+		ForexOriginCurrency string `json:"forexOriginCurrency"`
+		FeeAmount           string `json:"feeAmount"`
+		FeeCurrency         string `json:"feeCurrency"`
+		BeneficiaryAmount   string `json:"beneficiaryAmount"`
+		ReferenceNumber     string `json:"referenceNumber"`
+	} `json:"additionalInfo"`
+}

@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
-	"github.com/faizauthar12/doku/app/models"
 	"io"
 	"net/http"
 	"net/url"
@@ -13,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/faizauthar12/doku/app/models"
 
 	"github.com/sirupsen/logrus"
 )
@@ -73,6 +75,7 @@ func request(opt *Options, method string) <-chan Response {
 			Timeout:   opt.Timeout,
 			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
 		}
+		s3.New()
 		logrus.Debugf("http request body : %s", opt.Body)
 		clientReqHeader := http.Header{}
 		for k, v := range opt.Headers {
@@ -110,7 +113,7 @@ func request(opt *Options, method string) <-chan Response {
 		rsp, e = c.Do(&reqObj)
 		if e != nil {
 			logrus.Debugf("error when creating http request %s", e.Error())
-			res <- Response{Error: fmt.Errorf("failed to create new request")}
+			res <- Response{Error: fmt.Errorf("failed to create new request: %v", e.Error())}
 			return
 		}
 		defer rsp.Body.Close()

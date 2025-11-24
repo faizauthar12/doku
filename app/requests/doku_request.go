@@ -39,3 +39,18 @@ type DokuNotificationRequest struct {
 	Signature        string `json:"Signature"`
 	JsonBody         []byte `json:"Json-Body"`
 }
+
+type DokuBankAccountInquiryRequest struct {
+	PartnerReferenceNo string `json:"partnerReferenceNo"`
+	CustomerNumber     string `json:"customerNumber"`
+	Amount             struct {
+		Value    string `json:"value"`
+		Currency string `json:"currency"`
+	} `json:"amount"`
+	BeneficiaryAccountNumber string `json:"beneficiaryAccountNumber"`
+	AdditionalInfo           struct {
+		BeneficiaryBankCode    string `json:"beneficiaryBankCode"`
+		BeneficiaryAccountName string `json:"beneficiaryAccountName"`
+		SenderCountryCode      string `json:"senderCountryCode"`
+	} `json:"additionalInfo"`
+}

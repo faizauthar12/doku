@@ -1,12 +1,8 @@
 package main
 
-import (
-	"github.com/faizauthar12/doku/app/config"
-)
-
-func init() {
-	config.InitConfig()
-}
+// func init() {
+// 	config.InitConfig()
+// }
 
 func main() {
 	//cfg := config.Get()
