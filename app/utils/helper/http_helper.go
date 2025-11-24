@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/faizauthar12/doku/app/models"
 
 	"github.com/sirupsen/logrus"
@@ -75,7 +74,6 @@ func request(opt *Options, method string) <-chan Response {
 			Timeout:   opt.Timeout,
 			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
 		}
-		s3.New()
 		logrus.Debugf("http request body : %s", opt.Body)
 		clientReqHeader := http.Header{}
 		for k, v := range opt.Headers {
