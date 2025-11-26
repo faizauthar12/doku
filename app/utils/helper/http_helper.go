@@ -2,7 +2,6 @@ package helper
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -71,8 +70,7 @@ func request(opt *Options, method string) <-chan Response {
 		var rsp *http.Response
 		var e error
 		c := http.Client{
-			Timeout:   opt.Timeout,
-			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+			Timeout: opt.Timeout,
 		}
 		logrus.Debugf("http request body : %s", opt.Body)
 		clientReqHeader := http.Header{}
