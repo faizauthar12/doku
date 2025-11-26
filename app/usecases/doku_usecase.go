@@ -229,11 +229,9 @@ func (u *dokuUseCase) CreateAccount(request *requests.DokuCreateSubAccountReques
 
 func (u *dokuUseCase) AcceptPayment(request *requests.DokuCreatePaymentRequest) (*responses.DokuCreatePaymentHTTPResponse, *models.ErrorLog) {
 
-	invoiceNumber := fmt.Sprintf("INV-%d", time.Now().UnixNano())
-
 	createPaymentPayload := &requests.DokuCreatePaymentHTTPRequest{
 		Order: &models.DokuOrder{
-			InvoiceNumber: null.StringFrom(invoiceNumber),
+			InvoiceNumber: null.StringFrom(request.InvoiceNumber),
 			Amount:        null.IntFrom(request.Amount),
 		},
 		Payment: &models.DokuPayment{

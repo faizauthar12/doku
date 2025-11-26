@@ -31,6 +31,7 @@ type DokuCreatePaymentRequest struct {
 	CustomerEmail  string `json:"customer_email"`
 	SacID          string `json:"SacID"`
 	PaymentDueDate int64  `json:"payment_due_date,omitempty"`
+	InvoiceNumber  string `json:"invoice_number"` // Custom Invoice from your business logic
 }
 
 type DokuNotificationRequest struct {
