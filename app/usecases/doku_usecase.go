@@ -268,7 +268,7 @@ func (u *dokuUseCase) AcceptPayment(request *requests.DokuCreatePaymentRequest) 
 
 	// preparing request headers
 	requestHeader := map[string]string{
-		"Client-Id":         config.Get().Doku.ClientID,
+		"Client-Id":         u.DokuAPIClientID,
 		"Request-Id":        requestId,
 		"Request-Timestamp": requestTimeStamp.Format("2006-01-02T15:04:05Z"),
 		"Signature":         signature,
