@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/faizauthar12/doku/app/config"
 	"github.com/faizauthar12/doku/app/models"
 	"github.com/faizauthar12/doku/app/requests"
 	"github.com/faizauthar12/doku/app/responses"
@@ -182,7 +181,7 @@ func (u *dokuUseCase) CreateAccount(request *requests.DokuCreateSubAccountReques
 
 	// preparing request headers
 	requestHeader := map[string]string{
-		"Client-Id":         config.Get().Doku.ClientID,
+		"Client-Id":         u.DokuAPIClientID,
 		"Request-Id":        requestId,
 		"Request-Timestamp": requestTimeStamp.Format("2006-01-02T15:04:05Z"),
 		"Signature":         signature,
@@ -325,7 +324,7 @@ func (u *dokuUseCase) GetBalance(sacID string) (*responses.DokuGetBalanceHTTPRes
 
 	// preparing request headers
 	requestHeader := map[string]string{
-		"Client-Id":         config.Get().Doku.ClientID,
+		"Client-Id":         u.DokuAPIClientID,
 		"Request-Id":        requestId,
 		"Request-Timestamp": requestTimeStamp.Format("2006-01-02T15:04:05Z"),
 		"Signature":         signature,
