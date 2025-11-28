@@ -203,31 +203,41 @@ func (u *dokuUseCase) CreateAccount(request *requests.DokuCreateSubAccountReques
 		return nil, logData
 	}
 
-	var createAccountResponse *responses.DokuCreateSubAccountHTTPResponse
+	createAccountResponse := &responses.DokuCreateSubAccountHTTPResponse{
+		Account: &responses.DokuCreateSubAccountAccountResponse{},
+	}
+
 	if createAccountAPI.StatusCode != http.StatusOK {
-		dokuErrorResponse := &responses.DokuErrorHTTPResponse{}
+		type DokuErrorResponse struct {
+			Error struct {
+				Message string `json:"message"`
+			}
+		}
+
+		dokuErrorResponse := &DokuErrorResponse{}
+
 		err = json.Unmarshal(createAccountAPI.Body, &dokuErrorResponse)
 		if err != nil {
 			logData := helper.WriteLog(err, http.StatusInternalServerError, "Failed to unmarshal create payment error response")
 			return nil, logData
 		}
 
-		if dokuErrorResponse.Message != nil {
-			if strings.Contains(dokuErrorResponse.Message[0], "email already registered") {
+		if dokuErrorResponse.Error.Message != "" {
+			if strings.Contains(dokuErrorResponse.Error.Message, "email already registered") {
 				// extract the account id from error message
 				// message format: "email already registered with account id: SAC-6604-1764297586731"
-				parts := strings.Split(dokuErrorResponse.Message[0], "account id: ")
+				parts := strings.Split(dokuErrorResponse.Error.Message, "account id: ")
 				if len(parts) == 2 {
 					sacID := strings.TrimSpace(parts[1])
-					return &responses.DokuCreateSubAccountAccountResponse{
-						ID: null.StringFrom(sacID),
-					}, nil
+					createAccountResponse.Account.ID = null.StringFrom(sacID)
+
+					return createAccountResponse.Account, nil
 				}
 			}
 		}
 
-		errorMessage := fmt.Sprintf("Doku Create Sub Account API Error: %v", dokuErrorResponse.Message)
-		logData := helper.WriteLog(fmt.Errorf("Doku Create Sub Account API Error: %v", dokuErrorResponse.Message), createAccountAPI.StatusCode, errorMessage)
+		errorMessage := fmt.Sprintf("Doku Create Sub Account API Error: %v", dokuErrorResponse.Error.Message)
+		logData := helper.WriteLog(fmt.Errorf("Doku Create Sub Account API Error: %v", dokuErrorResponse.Error.Message), createAccountAPI.StatusCode, errorMessage)
 		return nil, logData
 	}
 
