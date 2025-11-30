@@ -119,14 +119,6 @@ func (u *dokuUseCase) verifySignatureComponent(
 	jsonBody []byte,
 ) (bool, *models.ErrorLog) {
 
-	// Format timestamp
-	timestamp, err := time.Parse("2006-01-02T15:04:05Z", requestTimestamp)
-	if err != nil {
-		errorMessage := fmt.Sprintf("Invalid request timestamp format")
-		logData := helper.WriteLog(err, http.StatusBadRequest, errorMessage)
-		return false, logData
-	}
-
 	// Calculate Digest - only for POST/PUT methods with body
 	// For GET requests, jsonBody will be nil and digest will be empty
 	var digest string
@@ -139,7 +131,7 @@ func (u *dokuUseCase) verifySignatureComponent(
 		"Client-Id:%s\nRequest-Id:%s\nRequest-Timestamp:%s\nRequest-Target:%s\nDigest:%s",
 		u.DokuAPIClientID,
 		requestId,
-		timestamp,
+		requestTimestamp,
 		requestTarget,
 		digest,
 	)
@@ -417,7 +409,7 @@ func (u *dokuUseCase) HandleNotification(request *requests.DokuNotificationReque
 		request.Signature,
 		request.RequestID,
 		request.RequestTimestamp,
-		"/checkout/v1/notification",
+		request.RequestTarget,
 		request.JsonBody,
 	)
 

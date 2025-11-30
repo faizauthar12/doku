@@ -75,9 +75,9 @@ type DokuBalance struct {
 }
 
 type DokuTransaction struct {
-	Type              null.String `json:"type,omitempty"`
-	Status            null.String `json:"status"`
-	Date              *time.Time  `json:"date"`
+	Type   null.String `json:"type,omitempty"`
+	Status null.String `json:"status"`
+	//Date              *time.Time  `json:"date"`
 	OriginalRequestID null.String `json:"original_request_id"`
 }
 
@@ -86,9 +86,9 @@ type DokuPaymentIdentifier struct {
 	Value null.String `json:"value"`
 }
 type DokuVirtualAccountpayment struct {
-	ReferenceNumber null.String              `json:"reference_number"`
-	Date            *time.Time               `json:"date"`
-	Identifier      []*DokuPaymentIdentifier `json:"identifier"`
+	ReferenceNumber null.String `json:"reference_number"`
+	//Date            *time.Time               `json:"date"`
+	Identifier []*DokuPaymentIdentifier `json:"identifier"`
 }
 
 type DokuCardPayment struct {

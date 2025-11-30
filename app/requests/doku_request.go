@@ -38,6 +38,7 @@ type DokuNotificationRequest struct {
 	RequestID        string `json:"Request-Id"`
 	RequestTimestamp string `json:"Request-Timestamp"`
 	Signature        string `json:"Signature"`
+	RequestTarget    string `json:"Request-Target"`
 	JsonBody         []byte `json:"Json-Body"`
 }
 
