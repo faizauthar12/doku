@@ -144,7 +144,22 @@ func (u *dokuUseCase) verifySignatureComponent(
 		digest,
 	)
 
-	if signature != signatureComponents {
+	// Get secret key from environment
+	secretKey := u.DokuAPISecretKey
+	if secretKey == "" {
+		logData := helper.WriteLog(fmt.Errorf("DOKU_SECRET_KEY not configured"), http.StatusInternalServerError, "Secret key is required for signature generation")
+		return false, logData
+	}
+
+	// Calculate HMAC-SHA256 base64
+	h := hmac.New(sha256.New, []byte(secretKey))
+	h.Write([]byte(signatureComponents))
+	signatureHash := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	// Format final signature with HMACSHA256= prefix
+	signatureLocal := fmt.Sprintf("HMACSHA256=%s", signatureHash)
+
+	if signature != signatureLocal {
 		errorMessage := fmt.Sprintf("Signature does not match")
 		logData := helper.WriteLog(errors.New(errorMessage), http.StatusUnauthorized, errorMessage)
 		return false, logData
