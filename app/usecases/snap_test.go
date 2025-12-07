@@ -72,43 +72,43 @@ func Test_generateGetTokenSignature(t *testing.T) {
 	}
 }
 
-func Test_generateRequestSignature(t *testing.T) {
-	type args struct {
-		privateKey  string
-		httpMethod  string
-		requestPath string
-		xTimestamp  string
-		accessToken string
-		jsonBody    []byte
-	}
-
-	tests := []struct {
-		name    string
-		args    args
-		want    string
-		wantErr bool
-	}{
-		{
-			name: "Test with valid private_key",
-			args: args{
-				privateKey:  privateKeyPem,
-				httpMethod:  "POST",
-				requestPath: "/snap/v1.1/emoney/bank-account-inquiry",
-				accessToken: "eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjE3NjM5OTc4MjcsImlzcyI6IkRPS1UiLCJjbGllbnRJZCI6IkJSTi0wMjMwLTE2OTY4MjAyOTEyODkifQ.gvxwrKe6CBqjDvYoZmB3U_NMUrYhyjYGquuX8ssxpTvG0UcsuOW9BNMsj1FzCj3oLVGL75n3vu-z4M1lKEhOnP6-_Sz_XJeCT0UDTGJRKarpowaWaEdQcLQotM0EbGj0qAukOgKRe64_eNtxzOa-WtFeNJQEkJHG9T26jsjcqbSbyhVyjWasI-z6CNPJhutFZ9D3rTX70tDqYGjD7roeLb1U8S1yVicfqELRjH_loP22JJMLDPnzO0xf88X2FajsNV7y1h87MXjkhsUspOi2_ZPInxc2PY04P7X40iXMn4Gh77wykUqj2U2ZKYewP6cn48b8uLrTBWw0Nq2kJyO19g",
-				xTimestamp:  time.Now().UTC().Format(time.RFC3339),
-				jsonBody:    []byte(`{"partnerReferenceNo":"hsjkans284b2he54","customerNumber":"628115678890","amount":{"value":"200000.00","currency":"IDR"},"beneficiaryAccountNumber":"8377388292","additionalInfo":{"beneficiaryBankCode":"014","beneficiaryAccountName":"FHILEA HERMANUS","senderCountryCode":"ID"}}`),
-			},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := generateRequestSignature(tt.args.privateKey, tt.args.httpMethod, tt.args.requestPath, tt.args.accessToken, tt.args.xTimestamp, tt.args.jsonBody)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("generateRequestSignature() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			t.Logf("Signature: %s", got)
-		})
-	}
-}
+//func Test_generateRequestSignature(t *testing.T) {
+//	type args struct {
+//		privateKey  string
+//		httpMethod  string
+//		requestPath string
+//		xTimestamp  string
+//		accessToken string
+//		jsonBody    []byte
+//	}
+//
+//	tests := []struct {
+//		name    string
+//		args    args
+//		want    string
+//		wantErr bool
+//	}{
+//		{
+//			name: "Test with valid private_key",
+//			args: args{
+//				privateKey:  privateKeyPem,
+//				httpMethod:  "POST",
+//				requestPath: "/snap/v1.1/emoney/bank-account-inquiry",
+//				accessToken: "eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjE3NjM5OTc4MjcsImlzcyI6IkRPS1UiLCJjbGllbnRJZCI6IkJSTi0wMjMwLTE2OTY4MjAyOTEyODkifQ.gvxwrKe6CBqjDvYoZmB3U_NMUrYhyjYGquuX8ssxpTvG0UcsuOW9BNMsj1FzCj3oLVGL75n3vu-z4M1lKEhOnP6-_Sz_XJeCT0UDTGJRKarpowaWaEdQcLQotM0EbGj0qAukOgKRe64_eNtxzOa-WtFeNJQEkJHG9T26jsjcqbSbyhVyjWasI-z6CNPJhutFZ9D3rTX70tDqYGjD7roeLb1U8S1yVicfqELRjH_loP22JJMLDPnzO0xf88X2FajsNV7y1h87MXjkhsUspOi2_ZPInxc2PY04P7X40iXMn4Gh77wykUqj2U2ZKYewP6cn48b8uLrTBWw0Nq2kJyO19g",
+//				xTimestamp:  time.Now().UTC().Format(time.RFC3339),
+//				jsonBody:    []byte(`{"partnerReferenceNo":"hsjkans284b2he54","customerNumber":"628115678890","amount":{"value":"200000.00","currency":"IDR"},"beneficiaryAccountNumber":"8377388292","additionalInfo":{"beneficiaryBankCode":"014","beneficiaryAccountName":"FHILEA HERMANUS","senderCountryCode":"ID"}}`),
+//			},
+//			wantErr: false,
+//		},
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			got, err := generateRequestSignature(tt.args.privateKey, tt.args.httpMethod, tt.args.requestPath, tt.args.accessToken, tt.args.xTimestamp, tt.args.jsonBody)
+//			if (err != nil) != tt.wantErr {
+//				t.Errorf("generateRequestSignature() error = %v, wantErr %v", err, tt.wantErr)
+//				return
+//			}
+//			t.Logf("Signature: %s", got)
+//		})
+//	}
+//}

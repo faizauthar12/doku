@@ -23,6 +23,9 @@ type Configuration struct {
 			PercentageRate float64 // e.g. 2.8%
 			FlatFee        int64   // e.g. IDR 2000
 		}
+		VirtualAccount struct {
+			FlatFee int64 // e.g. IDR 4000
+		}
 		ConvenienceStore struct {
 			Alfamart struct {
 				FlatFee int64 //e.g. IDR 5000
@@ -140,14 +143,8 @@ func Get() Configuration {
 	return cfg
 }
 
-func InitConfig(filenames ...string) {
-	err := godotenv.Load(filenames...)
-	if err != nil {
-		logData := helper.WriteLog(err, http.StatusInternalServerError, helper.DefaultStatusText[http.StatusInternalServerError])
-		log.Fatalf("Error loading .env file")
-		log.Fatalf("Error: %v", logData)
-	}
-
+// loadConfigFromEnv populates cfg from environment variables (internal helper)
+func loadConfigFromEnv() {
 	// Doku Config
 	cfg.Doku.ClientID = GetEnvString("DOKU_API_CLIENT_ID", "")
 	cfg.Doku.SecretKey = GetEnvString("DOKU_API_SECRET_KEY", "")
@@ -157,6 +154,9 @@ func InitConfig(filenames ...string) {
 	// Cards
 	cfg.TransactionFee.Cards.PercentageRate = GetEnvFloat64("TRANSACTION_FEE_CARDS_PERCENTAGE_RATE", 2.8)
 	cfg.TransactionFee.Cards.FlatFee = int64(GetEnvInt("TRANSACTION_FEE_CARDS_FLAT_FEE", 2000))
+
+	// Virtual Account (Transfer Bank)
+	cfg.TransactionFee.VirtualAccount.FlatFee = int64(GetEnvInt("TRANSACTION_FEE_VIRTUAL_ACCOUNT_FLAT_FEE", 4000))
 
 	// Convenience Store
 	cfg.TransactionFee.ConvenienceStore.Alfamart.FlatFee = int64(GetEnvInt("TRANSACTION_FEE_ALFAMART_FLAT_FEE", 5000))
@@ -188,4 +188,30 @@ func InitConfig(filenames ...string) {
 
 	// Tax
 	cfg.TransactionFee.Tax = int64(GetEnvInt("TRANSACTION_FEE_TAX", 11))
+}
+
+// InitConfig loads .env file(s) and then populates config.
+// Use this when running doku as a standalone application.
+func InitConfig(filenames ...string) {
+	err := godotenv.Load(filenames...)
+	if err != nil {
+		logData := helper.WriteLog(err, http.StatusInternalServerError, helper.DefaultStatusText[http.StatusInternalServerError])
+		log.Fatalf("Error loading .env file")
+		log.Fatalf("Error: %v", logData)
+	}
+
+	loadConfigFromEnv()
+}
+
+// InitConfigFromEnv populates config from existing environment variables.
+// Use this when doku is used as a module and the parent project has already
+// loaded the .env file (e.g., backend project calls godotenv.Load() first).
+func InitConfigFromEnv() {
+	loadConfigFromEnv()
+}
+
+// InitConfigWithStruct allows setting the configuration directly with a struct.
+// Use this when the parent project wants full control over configuration values.
+func InitConfigWithStruct(configuration Configuration) {
+	cfg = configuration
 }
