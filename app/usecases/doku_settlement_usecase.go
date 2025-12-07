@@ -237,6 +237,33 @@ func (u *dokuSettlementUseCase) getFeeParameters(paymentMethod string) (percenta
 	return percentageRate, flatFee, hasTax, nil
 }
 
+func (u *dokuSettlementUseCase) CalculateSettlementFee(paymentMethod string, amount float64) (*responses.DokuSettlementResultResponse, error) {
+	if paymentMethod == "" {
+		return nil, errors.New("payment method is empty")
+	}
+
+	if amount <= 0 {
+		return nil, errors.New("invalid amount: must be greater than 0")
+	}
+
+	transactionFee, tax, err := u.calculateFeeAndTax(paymentMethod, amount)
+	if err != nil {
+		return nil, err
+	}
+
+	totalDeduction := transactionFee + tax
+	netAmount := amount - totalDeduction
+
+	return &responses.DokuSettlementResultResponse{
+		PaymentMethod:  paymentMethod,
+		GrossAmount:    amount,
+		TransactionFee: roundToTwoDecimals(transactionFee),
+		Tax:            roundToTwoDecimals(tax),
+		TotalDeduction: roundToTwoDecimals(totalDeduction),
+		NetAmount:      roundToTwoDecimals(netAmount),
+	}, nil
+}
+
 // CalculateGrossAmount calculates the gross amount (what customer pays) given a desired net amount
 // that the merchant wants to receive after all fees and taxes are deducted.
 //
@@ -312,32 +339,5 @@ func (u *dokuSettlementUseCase) CalculateGrossAmount(paymentMethod string, desir
 		Tax:            roundToTwoDecimals(tax),
 		TotalDeduction: roundToTwoDecimals(totalDeduction),
 		NetAmount:      roundToTwoDecimals(actualNetAmount),
-	}, nil
-}
-
-func (u *dokuSettlementUseCase) CalculateSettlementFee(paymentMethod string, amount float64) (*responses.DokuSettlementResultResponse, error) {
-	if paymentMethod == "" {
-		return nil, errors.New("payment method is empty")
-	}
-
-	if amount <= 0 {
-		return nil, errors.New("invalid amount: must be greater than 0")
-	}
-
-	transactionFee, tax, err := u.calculateFeeAndTax(paymentMethod, amount)
-	if err != nil {
-		return nil, err
-	}
-
-	totalDeduction := transactionFee + tax
-	netAmount := amount - totalDeduction
-
-	return &responses.DokuSettlementResultResponse{
-		PaymentMethod:  paymentMethod,
-		GrossAmount:    amount,
-		TransactionFee: roundToTwoDecimals(transactionFee),
-		Tax:            roundToTwoDecimals(tax),
-		TotalDeduction: roundToTwoDecimals(totalDeduction),
-		NetAmount:      roundToTwoDecimals(netAmount),
 	}, nil
 }
