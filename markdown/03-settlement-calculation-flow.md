@@ -4,6 +4,10 @@
 
 The Settlement Calculation flow handles the calculation of transaction fees and net amounts for different payment methods. When DOKU settles funds to your account, they deduct fees based on the payment method used by the customer.
 
+This module provides two key functions:
+1. **CalculateSettlementFee**: Given a gross amount, calculate the net amount after fees
+2. **CalculateGrossAmount (Upsert)**: Given a desired net amount, calculate what the customer must pay so the merchant receives exactly that amount
+
 ---
 
 ## Fee Structure Overview
@@ -379,6 +383,8 @@ func roundToTwoDecimals(value float64) float64 {
 
 ## Usage Example
 
+### Calculate Settlement Fee (Standard)
+
 ```go
 // Initialize use case
 settlementUseCase := usecases.NewDokuSettlementUseCase()
@@ -407,6 +413,174 @@ fmt.Printf("Net Amount: %.2f\n", result.NetAmount)
 // Total Deduction: 4440.00
 // Net Amount: 95560.00
 ```
+
+---
+
+## Gross Amount Calculation (Upsert Feature)
+
+### Overview
+
+The **CalculateGrossAmount** function solves the reverse problem: given a desired net amount that the merchant wants to receive, calculate the gross amount (what the customer must pay) so that after all fees and taxes are deducted, the merchant receives exactly (or slightly more due to rounding) the desired net amount.
+
+This is essential when:
+- Merchant wants to receive exactly IDR 100,000 after all fees
+- Customer should bear all transaction costs
+- Pricing must guarantee merchant receives the full product/service value
+
+### Formula Derivation
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    GROSS AMOUNT CALCULATION (UPSERT)                            │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│   Desired Net Amount (Merchant Receives)                                        │
+│         │                                                                       │
+│         ▼                                                                       │
+│   ┌─────────────────────────────────────────────────┐                          │
+│   │  Reverse Calculation                            │                          │
+│   │                                                 │                          │
+│   │  For flat fee with tax:                        │                          │
+│   │    gross = net + flatFee × (1 + taxRate)       │                          │
+│   │                                                 │                          │
+│   │  For percentage with tax:                       │                          │
+│   │    gross = net / (1 - rate × (1 + taxRate))    │                          │
+│   │                                                 │                          │
+│   │  For mixed (% + flat) with tax:                │                          │
+│   │    gross = (net + flat×(1+tax))                │                          │
+│   │            / (1 - rate×(1+tax))                │                          │
+│   └─────────────────────────────────────────────────┘                          │
+│         │                                                                       │
+│         ▼                                                                       │
+│   Gross Amount (Customer Pays)                                                  │
+│   (Rounded up to ensure merchant gets at least desired net)                     │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Mathematical Formula
+
+**For percentage-based fees with tax:**
+```
+netAmount = grossAmount × (1 - percentageRate × (1 + taxRate))
+
+Solving for grossAmount:
+grossAmount = netAmount / (1 - percentageRate × (1 + taxRate))
+```
+
+**For flat fee with tax:**
+```
+netAmount = grossAmount - flatFee × (1 + taxRate)
+
+Solving for grossAmount:
+grossAmount = netAmount + flatFee × (1 + taxRate)
+```
+
+**For mixed (percentage + flat fee) with tax:**
+```
+grossAmount = (netAmount + flatFee × (1 + taxRate)) / (1 - percentageRate × (1 + taxRate))
+```
+
+### Implementation
+
+```go
+func (u *dokuSettlementUseCase) CalculateGrossAmount(
+    paymentMethod string, 
+    desiredNetAmount float64,
+) (*responses.DokuSettlementResultResponse, error) {
+    
+    // 1. Validate inputs
+    if paymentMethod == "" {
+        return nil, errors.New("payment method is empty")
+    }
+    if desiredNetAmount <= 0 {
+        return nil, errors.New("invalid desired net amount: must be greater than 0")
+    }
+
+    // 2. Get fee parameters for this payment method
+    percentageRate, flatFee, hasTax, err := u.getFeeParameters(paymentMethod)
+    if err != nil {
+        return nil, err
+    }
+
+    taxRate := float64(0)
+    if hasTax {
+        taxRate = float64(u.cfg.TransactionFee.Tax) / 100
+    }
+
+    // 3. Calculate gross amount using inverse formula
+    taxMultiplier := 1 + taxRate
+    divisor := 1 - (percentageRate * taxMultiplier)
+
+    if divisor <= 0 {
+        return nil, errors.New("invalid fee configuration: fees exceed 100%")
+    }
+
+    grossAmount := (desiredNetAmount + (flatFee * taxMultiplier)) / divisor
+
+    // 4. Round up to ensure merchant receives at least desired net
+    grossAmount = math.Ceil(grossAmount)
+
+    // 5. Verify by calculating actual settlement
+    transactionFee, tax, _ := u.calculateFeeAndTax(paymentMethod, grossAmount)
+    totalDeduction := transactionFee + tax
+    actualNetAmount := grossAmount - totalDeduction
+
+    return &responses.DokuSettlementResultResponse{
+        PaymentMethod:  paymentMethod,
+        GrossAmount:    grossAmount,
+        TransactionFee: roundToTwoDecimals(transactionFee),
+        Tax:            roundToTwoDecimals(tax),
+        TotalDeduction: roundToTwoDecimals(totalDeduction),
+        NetAmount:      roundToTwoDecimals(actualNetAmount),
+    }, nil
+}
+```
+
+### Usage Example
+
+```go
+// Merchant wants to receive exactly IDR 100,000
+desiredNet := float64(100000)
+
+// Calculate what customer must pay
+result, err := settlementUseCase.CalculateGrossAmount(
+    constants.BCA_VA,  // Payment method
+    desiredNet,        // Desired net amount
+)
+if err != nil {
+    log.Fatalf("Error: %v", err)
+}
+
+fmt.Printf("Desired Net: %.2f\n", desiredNet)
+fmt.Printf("Customer Pays (Gross): %.2f\n", result.GrossAmount)
+fmt.Printf("Transaction Fee: %.2f\n", result.TransactionFee)
+fmt.Printf("Tax: %.2f\n", result.Tax)
+fmt.Printf("Merchant Receives (Net): %.2f\n", result.NetAmount)
+
+// Output:
+// Desired Net: 100000.00
+// Customer Pays (Gross): 104440.00
+// Transaction Fee: 4000.00
+// Tax: 440.00
+// Merchant Receives (Net): 100000.00
+```
+
+### Gross Amount Summary Table
+
+| Payment Method | Desired Net | Customer Pays (Gross) | Fee | Tax | Actual Net |
+|----------------|-------------|----------------------|-----|-----|------------|
+| Virtual Account (BCA, etc.) | 100,000 | 104,440 | 4,000 | 440 | 100,000 |
+| Alfamart | 100,000 | 105,550 | 5,000 | 550 | 100,000 |
+| Indomaret | 100,000 | 107,215 | 6,500 | 715 | 100,000 |
+| QRIS | 100,000 | 100,700 | 700 | 0 | 100,000 |
+| ShopeePay/OVO/LinkAja | 100,000 | 102,271 | 2,045.42 | 225.00 | 100,000.58 |
+| DOKU/DANA Wallet | 100,000 | 101,694 | 1,525.41 | 167.80 | 100,000.79 |
+| Credit Card | 100,000 | 105,499 | 4,953.97 | 544.94 | 100,000.09 |
+| Kredivo/Indodana | 100,000 | 102,620 | 2,360.26 | 259.63 | 100,000.11 |
+| Akulaku | 100,000 | 101,694 | 1,525.41 | 167.80 | 100,000.79 |
+
+> **Note:** For percentage-based fees, the gross amount is rounded up to the nearest whole number to ensure the merchant always receives at least the desired net amount. This may result in the actual net being slightly higher than requested.
 
 ---
 
@@ -455,23 +629,23 @@ func (s *settlementService) ProcessSettlement(
 
 ## Fee Summary Table
 
-| Payment Method | Fee Type | Fee Rate | Tax | Example Net (IDR 100,000) |
-|----------------|----------|----------|-----|---------------------------|
-| Credit Card | % + Flat | 2.8% + 2,000 | 11% | 94,672 |
-| Virtual Account | Flat | 4,000 | 11% | 95,560 |
-| Alfamart | Flat | 5,000 | 11% | 94,450 |
-| Indomaret | Flat | 6,500 | 11% | 92,785 |
-| QRIS | Flat | 700 | 0% | 99,300 |
-| ShopeePay | % | 2% | 11% | 97,780 |
-| OVO | % | 2% | 11% | 97,780 |
-| LinkAja | % | 2% | 11% | 97,780 |
-| DOKU Wallet | % | 1.5% | 11% | 98,335 |
-| DANA | % | 1.5% | 11% | 98,335 |
-| Akulaku | % | 1.5% | 11% | 98,335 |
-| Kredivo | % | 2.3% | 11% | 97,447 |
-| Indodana | % | 2.3% | 11% | 97,447 |
-| Direct Debit BRI | % | 2% | 11% | 97,780 |
-| Jenius Pay | % | 1.5% | 11% | 98,335 |
+| Payment Method | Fee Type | Fee Rate | Tax | Net from 100K Gross | Gross for 100K Net |
+|----------------|----------|----------|-----|---------------------|-------------------|
+| Credit Card | % + Flat | 2.8% + 2,000 | 11% | 94,672 | 105,499 |
+| Virtual Account | Flat | 4,000 | 11% | 95,560 | 104,440 |
+| Alfamart | Flat | 5,000 | 11% | 94,450 | 105,550 |
+| Indomaret | Flat | 6,500 | 11% | 92,785 | 107,215 |
+| QRIS | Flat | 700 | 0% | 99,300 | 100,700 |
+| ShopeePay | % | 2% | 11% | 97,780 | 102,271 |
+| OVO | % | 2% | 11% | 97,780 | 102,271 |
+| LinkAja | % | 2% | 11% | 97,780 | 102,271 |
+| DOKU Wallet | % | 1.5% | 11% | 98,335 | 101,694 |
+| DANA | % | 1.5% | 11% | 98,335 | 101,694 |
+| Akulaku | % | 1.5% | 11% | 98,335 | 101,694 |
+| Kredivo | % | 2.3% | 11% | 97,447 | 102,620 |
+| Indodana | % | 2.3% | 11% | 97,447 | 102,620 |
+| Direct Debit BRI | % | 2% | 11% | 97,780 | 102,271 |
+| Jenius Pay | % | 1.5% | 11% | 98,335 | 101,694 |
 
 ---
 
@@ -521,6 +695,33 @@ TRANSACTION_FEE_BRI_DIRECT_DEBIT_PERCENTAGE_RATE=2.0
 # Digital Banking
 TRANSACTION_FEE_JENIUSPAY_PERCENTAGE_RATE=1.5
 
-# Tax (PPN)
+# Tax Rate (PPN)
 TRANSACTION_FEE_TAX=11
 ```
+
+---
+
+## API Reference
+
+### Interface Methods
+
+```go
+type DokuSettlementUseCaseInterface interface {
+    // CalculateSettlementFee calculates the net amount from a given gross amount
+    // Use when you know what the customer paid and need to calculate merchant's net
+    CalculateSettlementFee(paymentMethod string, amount float64) (*responses.DokuSettlementResultResponse, error)
+    
+    // CalculateGrossAmount calculates the gross amount needed for a desired net amount
+    // Use when you need to determine what customer should pay for merchant to receive exact amount
+    CalculateGrossAmount(paymentMethod string, desiredNetAmount float64) (*responses.DokuSettlementResultResponse, error)
+}
+```
+
+### When to Use Each Method
+
+| Scenario | Method | Example |
+|----------|--------|---------|
+| Customer paid IDR 100,000, what does merchant receive? | `CalculateSettlementFee` | Input: 100,000 → Net: 95,560 (VA) |
+| Merchant needs exactly IDR 100,000, what should customer pay? | `CalculateGrossAmount` | Input: 100,000 → Gross: 104,440 (VA) |
+| Standard checkout flow | `CalculateSettlementFee` | Use after payment notification |
+| Fee-inclusive pricing | `CalculateGrossAmount` | Use when creating payment request |

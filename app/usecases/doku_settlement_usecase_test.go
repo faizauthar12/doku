@@ -228,3 +228,290 @@ func TestLargeAmountCalculations(t *testing.T) {
 		t.Errorf("expected net amount %.2f, got %.2f", expectedNet, result.NetAmount)
 	}
 }
+
+func TestCalculateGrossAmount(t *testing.T) {
+	usecase := NewDokuSettlementUseCase()
+
+	testCases := []struct {
+		name             string
+		paymentMethod    string
+		desiredNetAmount float64
+		description      string
+	}{
+		{
+			name:             "Transfer Bank - BCA VA",
+			paymentMethod:    constants.BCA_VA,
+			desiredNetAmount: 100000,
+			description:      "Flat fee IDR 4000 + 11% tax",
+		},
+		{
+			name:             "Transfer Bank - Mandiri VA",
+			paymentMethod:    constants.Mandiri_VA,
+			desiredNetAmount: 100000,
+			description:      "Flat fee IDR 4000 + 11% tax",
+		},
+		{
+			name:             "Alfamart",
+			paymentMethod:    constants.ALFA_GROUP,
+			desiredNetAmount: 100000,
+			description:      "Flat fee IDR 5000 + 11% tax",
+		},
+		{
+			name:             "Indomaret",
+			paymentMethod:    constants.INDOMARET,
+			desiredNetAmount: 100000,
+			description:      "Flat fee IDR 6500 + 11% tax",
+		},
+		{
+			name:             "QRIS",
+			paymentMethod:    constants.QRIS,
+			desiredNetAmount: 100000,
+			description:      "Flat fee IDR 700, no tax",
+		},
+		{
+			name:             "ShopeePay",
+			paymentMethod:    constants.SHOPEEPAY,
+			desiredNetAmount: 100000,
+			description:      "2% fee + 11% tax",
+		},
+		{
+			name:             "OVO",
+			paymentMethod:    constants.OVO,
+			desiredNetAmount: 100000,
+			description:      "2% fee + 11% tax",
+		},
+		{
+			name:             "LinkAja",
+			paymentMethod:    constants.LINKAJA,
+			desiredNetAmount: 100000,
+			description:      "2% fee + 11% tax",
+		},
+		{
+			name:             "DOKU Wallet",
+			paymentMethod:    constants.DOKU_WALLET,
+			desiredNetAmount: 100000,
+			description:      "1.5% fee + 11% tax",
+		},
+		{
+			name:             "DANA Wallet",
+			paymentMethod:    constants.DANA,
+			desiredNetAmount: 100000,
+			description:      "1.5% fee + 11% tax",
+		},
+		{
+			name:             "Credit Card",
+			paymentMethod:    constants.CREDIT_CARD,
+			desiredNetAmount: 100000,
+			description:      "2.8% + IDR 2000 + 11% tax",
+		},
+		{
+			name:             "Paylater Akulaku",
+			paymentMethod:    constants.PAYLATER_AKULAKU,
+			desiredNetAmount: 100000,
+			description:      "1.5% fee + 11% tax",
+		},
+		{
+			name:             "Paylater Kredivo",
+			paymentMethod:    constants.PAYLATER_KREDIVO,
+			desiredNetAmount: 100000,
+			description:      "2.3% fee + 11% tax",
+		},
+		{
+			name:             "Paylater Indodana",
+			paymentMethod:    constants.PAYLATER_INDODANA,
+			desiredNetAmount: 100000,
+			description:      "2.3% fee + 11% tax",
+		},
+		{
+			name:             "Direct Debit BRI",
+			paymentMethod:    constants.DIRECT_DEBIT_BRI,
+			desiredNetAmount: 100000,
+			description:      "2% fee + 11% tax",
+		},
+		{
+			name:             "Jenius Pay",
+			paymentMethod:    constants.JENIUS_PAY,
+			desiredNetAmount: 100000,
+			description:      "1.5% fee + 11% tax",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := usecase.CalculateGrossAmount(tc.paymentMethod, tc.desiredNetAmount)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// The net amount should be >= desired net amount (due to rounding up)
+			if result.NetAmount < tc.desiredNetAmount {
+				t.Errorf("%s: net amount %.2f is less than desired %.2f", tc.description, result.NetAmount, tc.desiredNetAmount)
+			}
+
+			// Verify the calculation is correct
+			expectedDeduction := result.GrossAmount - result.NetAmount
+			if roundToTwoDecimals(result.TotalDeduction) != roundToTwoDecimals(expectedDeduction) {
+				t.Errorf("total deduction mismatch: expected %.2f, got %.2f", expectedDeduction, result.TotalDeduction)
+			}
+
+			// Verify fee + tax = total deduction
+			feeAndTax := result.TransactionFee + result.Tax
+			if roundToTwoDecimals(feeAndTax) != roundToTwoDecimals(result.TotalDeduction) {
+				t.Errorf("fee + tax mismatch: expected %.2f, got %.2f", result.TotalDeduction, feeAndTax)
+			}
+
+			fmt.Printf("CalculateGrossAmount: Desired Net: %.2f, Payment Method: %s, Gross: %.2f, Fee: %.2f, Tax: %.2f, Actual Net: %.2f\n",
+				tc.desiredNetAmount, tc.paymentMethod, result.GrossAmount, result.TransactionFee, result.Tax, result.NetAmount)
+		})
+	}
+}
+
+func TestCalculateGrossAmount_RoundTrip(t *testing.T) {
+	usecase := NewDokuSettlementUseCase()
+
+	// Test that CalculateGrossAmount produces a gross that gives back at least the desired net
+	testCases := []struct {
+		paymentMethod    string
+		desiredNetAmount float64
+	}{
+		{constants.BCA_VA, 100000},
+		{constants.SHOPEEPAY, 100000},
+		{constants.CREDIT_CARD, 100000},
+		{constants.QRIS, 100000},
+		{constants.ALFA_GROUP, 100000},
+		{constants.PAYLATER_KREDIVO, 100000},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.paymentMethod, func(t *testing.T) {
+			// First, calculate the gross amount needed
+			grossResult, err := usecase.CalculateGrossAmount(tc.paymentMethod, tc.desiredNetAmount)
+			if err != nil {
+				t.Fatalf("unexpected error calculating gross: %v", err)
+			}
+
+			// Then, verify by calculating settlement with that gross
+			settlementResult, err := usecase.CalculateSettlementFee(tc.paymentMethod, grossResult.GrossAmount)
+			if err != nil {
+				t.Fatalf("unexpected error calculating settlement: %v", err)
+			}
+
+			// The net amount from settlement should be >= desired net
+			if settlementResult.NetAmount < tc.desiredNetAmount {
+				t.Errorf("round trip failed: desired net %.2f, got %.2f", tc.desiredNetAmount, settlementResult.NetAmount)
+			}
+
+			// Both calculations should produce the same results
+			if grossResult.GrossAmount != settlementResult.GrossAmount {
+				t.Errorf("gross amount mismatch: %.2f vs %.2f", grossResult.GrossAmount, settlementResult.GrossAmount)
+			}
+
+			if grossResult.TransactionFee != settlementResult.TransactionFee {
+				t.Errorf("transaction fee mismatch: %.2f vs %.2f", grossResult.TransactionFee, settlementResult.TransactionFee)
+			}
+
+			if grossResult.Tax != settlementResult.Tax {
+				t.Errorf("tax mismatch: %.2f vs %.2f", grossResult.Tax, settlementResult.Tax)
+			}
+
+			if grossResult.NetAmount != settlementResult.NetAmount {
+				t.Errorf("net amount mismatch: %.2f vs %.2f", grossResult.NetAmount, settlementResult.NetAmount)
+			}
+
+			fmt.Printf("Round trip OK: Desired Net: %.2f, Gross: %.2f, Actual Net: %.2f\n",
+				tc.desiredNetAmount, grossResult.GrossAmount, settlementResult.NetAmount)
+		})
+	}
+}
+
+func TestCalculateGrossAmount_ErrorCases(t *testing.T) {
+	usecase := NewDokuSettlementUseCase()
+
+	t.Run("Empty payment method", func(t *testing.T) {
+		_, err := usecase.CalculateGrossAmount("", 100000)
+		if err == nil {
+			t.Error("expected error for empty payment method")
+		}
+	})
+
+	t.Run("Zero amount", func(t *testing.T) {
+		_, err := usecase.CalculateGrossAmount(constants.BCA_VA, 0)
+		if err == nil {
+			t.Error("expected error for zero amount")
+		}
+	})
+
+	t.Run("Negative amount", func(t *testing.T) {
+		_, err := usecase.CalculateGrossAmount(constants.BCA_VA, -100000)
+		if err == nil {
+			t.Error("expected error for negative amount")
+		}
+	})
+
+	t.Run("Unknown payment method", func(t *testing.T) {
+		_, err := usecase.CalculateGrossAmount("UNKNOWN_PAYMENT_METHOD", 100000)
+		if err == nil {
+			t.Error("expected error for unknown payment method")
+		}
+	})
+}
+
+func TestCalculateGrossAmount_LargeAmounts(t *testing.T) {
+	usecase := NewDokuSettlementUseCase()
+
+	// Test with a large amount (10 million IDR desired net)
+	result, err := usecase.CalculateGrossAmount(constants.SHOPEEPAY, 10000000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify merchant receives at least 10 million
+	if result.NetAmount < 10000000 {
+		t.Errorf("expected net amount >= 10000000, got %.2f", result.NetAmount)
+	}
+
+	// Verify calculation by reverse
+	settlementResult, err := usecase.CalculateSettlementFee(constants.SHOPEEPAY, result.GrossAmount)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if settlementResult.NetAmount < 10000000 {
+		t.Errorf("round trip: expected net amount >= 10000000, got %.2f", settlementResult.NetAmount)
+	}
+
+	fmt.Printf("Large amount test: Desired Net: 10000000, Gross: %.2f, Actual Net: %.2f\n",
+		result.GrossAmount, result.NetAmount)
+}
+
+func TestCalculateGrossAmount_SpecificValues(t *testing.T) {
+	usecase := NewDokuSettlementUseCase()
+
+	// Test specific expected values for BCA VA (flat fee IDR 4000 + 11% tax)
+	// desiredNet = 100000
+	// grossAmount = netAmount + flatFee * (1 + taxRate)
+	// grossAmount = 100000 + 4000 * 1.11 = 100000 + 4440 = 104440
+	result, err := usecase.CalculateGrossAmount(constants.BCA_VA, 100000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedGross := float64(104440)
+	if result.GrossAmount != expectedGross {
+		t.Errorf("BCA VA: expected gross %.2f, got %.2f", expectedGross, result.GrossAmount)
+	}
+
+	// For QRIS (flat fee IDR 700, no tax)
+	// grossAmount = netAmount + flatFee = 100000 + 700 = 100700
+	result, err = usecase.CalculateGrossAmount(constants.QRIS, 100000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedGross = float64(100700)
+	if result.GrossAmount != expectedGross {
+		t.Errorf("QRIS: expected gross %.2f, got %.2f", expectedGross, result.GrossAmount)
+	}
+
+	fmt.Printf("Specific values test passed\n")
+}
