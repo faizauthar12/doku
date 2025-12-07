@@ -24,6 +24,13 @@ func TestCalculateSettlementFee(t *testing.T) {
 		description       string
 	}{
 		{
+			name:              "Transfer Bank - Virtual Account (Generic)",
+			paymentMethod:     constants.VIRTUAL_ACCOUNT,
+			amount:            100000,
+			expectedNetAmount: 95560,
+			description:       "Fee: 4000, Tax: 440, Net: 95560",
+		},
+		{
 			name:              "Transfer Bank - BCA VA",
 			paymentMethod:     constants.BCA_VA,
 			amount:            100000,
@@ -239,6 +246,12 @@ func TestCalculateGrossAmount(t *testing.T) {
 		description      string
 	}{
 		{
+			name:             "Transfer Bank - Virtual Account (Generic)",
+			paymentMethod:    constants.VIRTUAL_ACCOUNT,
+			desiredNetAmount: 100000,
+			description:      "Flat fee IDR 4000 + 11% tax",
+		},
+		{
 			name:             "Transfer Bank - BCA VA",
 			paymentMethod:    constants.BCA_VA,
 			desiredNetAmount: 100000,
@@ -374,6 +387,7 @@ func TestCalculateGrossAmount_RoundTrip(t *testing.T) {
 		paymentMethod    string
 		desiredNetAmount float64
 	}{
+		{constants.VIRTUAL_ACCOUNT, 100000},
 		{constants.BCA_VA, 100000},
 		{constants.SHOPEEPAY, 100000},
 		{constants.CREDIT_CARD, 100000},
@@ -487,16 +501,28 @@ func TestCalculateGrossAmount_LargeAmounts(t *testing.T) {
 func TestCalculateGrossAmount_SpecificValues(t *testing.T) {
 	usecase := NewDokuSettlementUseCase()
 
-	// Test specific expected values for BCA VA (flat fee IDR 4000 + 11% tax)
+	// Test specific expected values for Virtual Account (flat fee IDR 4000 + 11% tax)
 	// desiredNet = 100000
 	// grossAmount = netAmount + flatFee * (1 + taxRate)
 	// grossAmount = 100000 + 4000 * 1.11 = 100000 + 4440 = 104440
-	result, err := usecase.CalculateGrossAmount(constants.BCA_VA, 100000)
+	result, err := usecase.CalculateGrossAmount(constants.VIRTUAL_ACCOUNT, 100000)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	expectedGross := float64(104440)
+	if result.GrossAmount != expectedGross {
+		t.Errorf("VIRTUAL_ACCOUNT: expected gross %.2f, got %.2f", expectedGross, result.GrossAmount)
+	}
+
+	// Test specific expected values for BCA VA (flat fee IDR 4000 + 11% tax)
+	// Same calculation as VIRTUAL_ACCOUNT since pricing is the same
+	result, err = usecase.CalculateGrossAmount(constants.BCA_VA, 100000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedGross = float64(104440)
 	if result.GrossAmount != expectedGross {
 		t.Errorf("BCA VA: expected gross %.2f, got %.2f", expectedGross, result.GrossAmount)
 	}
@@ -514,4 +540,97 @@ func TestCalculateGrossAmount_SpecificValues(t *testing.T) {
 	}
 
 	fmt.Printf("Specific values test passed\n")
+}
+
+func TestCalculateSettlementFee_VirtualAccount(t *testing.T) {
+	usecase := NewDokuSettlementUseCase()
+
+	// Test that VIRTUAL_ACCOUNT constant works the same as specific VA constants
+	result, err := usecase.CalculateSettlementFee(constants.VIRTUAL_ACCOUNT, 100000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Virtual Account: Flat fee IDR 4000 + 11% tax
+	// Fee: 4000, Tax: 440, Net: 95560
+	expectedFee := float64(4000)
+	expectedTax := float64(440)
+	expectedNet := float64(95560)
+
+	if result.TransactionFee != expectedFee {
+		t.Errorf("VIRTUAL_ACCOUNT: expected transaction fee %.2f, got %.2f", expectedFee, result.TransactionFee)
+	}
+
+	if result.Tax != expectedTax {
+		t.Errorf("VIRTUAL_ACCOUNT: expected tax %.2f, got %.2f", expectedTax, result.Tax)
+	}
+
+	if result.NetAmount != expectedNet {
+		t.Errorf("VIRTUAL_ACCOUNT: expected net amount %.2f, got %.2f", expectedNet, result.NetAmount)
+	}
+
+	// Verify it matches BCA_VA (same pricing)
+	bcaResult, err := usecase.CalculateSettlementFee(constants.BCA_VA, 100000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.TransactionFee != bcaResult.TransactionFee {
+		t.Errorf("VIRTUAL_ACCOUNT vs BCA_VA fee mismatch: %.2f vs %.2f", result.TransactionFee, bcaResult.TransactionFee)
+	}
+
+	if result.Tax != bcaResult.Tax {
+		t.Errorf("VIRTUAL_ACCOUNT vs BCA_VA tax mismatch: %.2f vs %.2f", result.Tax, bcaResult.Tax)
+	}
+
+	if result.NetAmount != bcaResult.NetAmount {
+		t.Errorf("VIRTUAL_ACCOUNT vs BCA_VA net mismatch: %.2f vs %.2f", result.NetAmount, bcaResult.NetAmount)
+	}
+
+	fmt.Printf("VIRTUAL_ACCOUNT test passed: Fee: %.2f, Tax: %.2f, Net: %.2f\n", result.TransactionFee, result.Tax, result.NetAmount)
+}
+
+func TestCalculateGrossAmount_VirtualAccount(t *testing.T) {
+	usecase := NewDokuSettlementUseCase()
+
+	// Test that VIRTUAL_ACCOUNT constant works the same as specific VA constants
+	result, err := usecase.CalculateGrossAmount(constants.VIRTUAL_ACCOUNT, 100000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Virtual Account: Flat fee IDR 4000 + 11% tax
+	// grossAmount = netAmount + flatFee * (1 + taxRate)
+	// grossAmount = 100000 + 4000 * 1.11 = 104440
+	expectedGross := float64(104440)
+	expectedNet := float64(100000)
+
+	if result.GrossAmount != expectedGross {
+		t.Errorf("VIRTUAL_ACCOUNT: expected gross %.2f, got %.2f", expectedGross, result.GrossAmount)
+	}
+
+	if result.NetAmount < expectedNet {
+		t.Errorf("VIRTUAL_ACCOUNT: expected net >= %.2f, got %.2f", expectedNet, result.NetAmount)
+	}
+
+	// Verify it matches BCA_VA (same pricing)
+	bcaResult, err := usecase.CalculateGrossAmount(constants.BCA_VA, 100000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.GrossAmount != bcaResult.GrossAmount {
+		t.Errorf("VIRTUAL_ACCOUNT vs BCA_VA gross mismatch: %.2f vs %.2f", result.GrossAmount, bcaResult.GrossAmount)
+	}
+
+	if result.TransactionFee != bcaResult.TransactionFee {
+		t.Errorf("VIRTUAL_ACCOUNT vs BCA_VA fee mismatch: %.2f vs %.2f", result.TransactionFee, bcaResult.TransactionFee)
+	}
+
+	if result.Tax != bcaResult.Tax {
+		t.Errorf("VIRTUAL_ACCOUNT vs BCA_VA tax mismatch: %.2f vs %.2f", result.Tax, bcaResult.Tax)
+	}
+
+	fmt.Printf("VIRTUAL_ACCOUNT gross amount test passed: Gross: %.2f, Fee: %.2f, Tax: %.2f, Net: %.2f\n",
+		result.GrossAmount, result.TransactionFee, result.Tax, result.NetAmount)
 }

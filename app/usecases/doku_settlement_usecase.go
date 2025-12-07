@@ -36,7 +36,7 @@ func (u *dokuSettlementUseCase) calculateFeeAndTax(paymentMethod string, amount 
 		tax = transactionFee * taxRate
 
 	// Virtual Account (Transfer Bank)
-	case constants.BCA_VA, constants.Mandiri_VA, constants.BSI_VA, constants.BRI_VA,
+	case constants.VIRTUAL_ACCOUNT, constants.BCA_VA, constants.Mandiri_VA, constants.BSI_VA, constants.BRI_VA,
 		constants.BNI_VA, constants.DOKU_VA, constants.PERMATA_VA, constants.CIMB_VA,
 		constants.DANAMON_VA, constants.BTN_VA, constants.BNC_VA:
 		transactionFee = float64(u.cfg.TransactionFee.VirtualAccount.FlatFee)
@@ -145,7 +145,7 @@ func (u *dokuSettlementUseCase) getFeeParameters(paymentMethod string) (percenta
 		hasTax = true
 
 	// Virtual Account: Flat Fee Only
-	case constants.BCA_VA, constants.Mandiri_VA, constants.BSI_VA, constants.BRI_VA,
+	case constants.VIRTUAL_ACCOUNT, constants.BCA_VA, constants.Mandiri_VA, constants.BSI_VA, constants.BRI_VA,
 		constants.BNI_VA, constants.DOKU_VA, constants.PERMATA_VA, constants.CIMB_VA,
 		constants.DANAMON_VA, constants.BTN_VA, constants.BNC_VA:
 		percentageRate = 0
@@ -242,18 +242,21 @@ func (u *dokuSettlementUseCase) getFeeParameters(paymentMethod string) (percenta
 //
 // Formula derivation:
 // For percentage-based fees with tax:
-//   netAmount = grossAmount - fee - tax
-//   netAmount = grossAmount - (grossAmount * rate) - (grossAmount * rate * taxRate)
-//   netAmount = grossAmount * (1 - rate - rate * taxRate)
-//   netAmount = grossAmount * (1 - rate * (1 + taxRate))
-//   grossAmount = netAmount / (1 - rate * (1 + taxRate))
+//
+//	netAmount = grossAmount - fee - tax
+//	netAmount = grossAmount - (grossAmount * rate) - (grossAmount * rate * taxRate)
+//	netAmount = grossAmount * (1 - rate - rate * taxRate)
+//	netAmount = grossAmount * (1 - rate * (1 + taxRate))
+//	grossAmount = netAmount / (1 - rate * (1 + taxRate))
 //
 // For flat fee with tax:
-//   netAmount = grossAmount - flatFee - (flatFee * taxRate)
-//   grossAmount = netAmount + flatFee * (1 + taxRate)
+//
+//	netAmount = grossAmount - flatFee - (flatFee * taxRate)
+//	grossAmount = netAmount + flatFee * (1 + taxRate)
 //
 // For mixed (percentage + flat) with tax:
-//   grossAmount = (netAmount + flatFee * (1 + taxRate)) / (1 - rate * (1 + taxRate))
+//
+//	grossAmount = (netAmount + flatFee * (1 + taxRate)) / (1 - rate * (1 + taxRate))
 func (u *dokuSettlementUseCase) CalculateGrossAmount(paymentMethod string, desiredNetAmount float64) (*responses.DokuSettlementResultResponse, error) {
 	if paymentMethod == "" {
 		return nil, errors.New("payment method is empty")
