@@ -725,3 +725,146 @@ type DokuSettlementUseCaseInterface interface {
 | Merchant needs exactly IDR 100,000, what should customer pay? | `CalculateGrossAmount` | Input: 100,000 → Gross: 104,440 (VA) |
 | Standard checkout flow | `CalculateSettlementFee` | Use after payment notification |
 | Fee-inclusive pricing | `CalculateGrossAmount` | Use when creating payment request |
+
+---
+
+## Balance Reconciliation Integration
+
+### Overview
+
+DOKU settles payments daily at **1PM on weekdays**, but **does not provide a webhook** for settlement completion. To detect when settlements have been processed, the consuming service (setter-service) uses an **on-demand reconciliation** approach by calling the DOKU `GetBalance` API.
+
+### GetBalance API Response
+
+```go
+type DokuGetBalanceHTTPResponse struct {
+    Balance *DokuBalance `json:"balance"`
+}
+
+type DokuBalance struct {
+    Pending   null.String `json:"pending"`   // Gross amount waiting for settlement
+    Available null.String `json:"available"` // Net amount available for disbursement
+}
+```
+
+### Settlement Detection Logic
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                     SETTLEMENT DETECTION LOGIC                                   │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  DOKU Balance (Source of Truth)          Ledger Balance (Local Cache)           │
+│  ───────────────────────────────         ─────────────────────────────          │
+│  pending: 0                              pending_balance: 100,000               │
+│  available: 95,560                       balance: 0                             │
+│                                                                                 │
+│                              ▼                                                  │
+│                                                                                 │
+│  Delta Calculation:                                                             │
+│  ─────────────────                                                              │
+│  delta = ledger_pending - doku_pending                                          │
+│  delta = 100,000 - 0 = 100,000                                                  │
+│                                                                                 │
+│  If delta > 0:                                                                  │
+│    → Settlement(s) have been processed!                                         │
+│    → Process IN_PROGRESS settlements (FIFO)                                     │
+│    → Update ledger: pending -= gross, balance += net                            │
+│                                                                                 │
+│  If delta == 0:                                                                 │
+│    → Balances in sync, no action needed                                         │
+│                                                                                 │
+│  If delta < 0:                                                                  │
+│    → DOKU has more pending than ledger (data integrity issue)                   │
+│    → Log warning, no action                                                     │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Integration Flow (setter-service)
+
+When user visits the balance page:
+
+```go
+// 1. Get DOKU balance (real-time from DOKU API)
+dokuBalance, err := dokuUseCase.GetBalance(userDoku.SubAccountID)
+
+// 2. Compare with ledger pending balance
+dokuPending := parseDokuBalance(dokuBalance.Balance.Pending)
+ledgerPending := ledgerWallet.PendingBalance
+
+delta := ledgerPending - dokuPending
+
+// 3. If delta > 0, reconcile settlements
+if delta > 0 {
+    // Get IN_PROGRESS settlements (FIFO order)
+    settlements := ledgerSettlementUseCase.GetSettlementsByAccountAndStatus(
+        ledgerAccountUUID,
+        SettlementStatusInProgress,
+    )
+    
+    // Process settlements until delta is satisfied
+    for _, settlement := range settlements {
+        // Update status to TRANSFERRED
+        ledgerSettlementUseCase.UpdateSettlementStatus(tx, settlement.UUID, "TRANSFERRED", &now)
+        
+        // Update wallet: -pending (gross), +available (net)
+        ledgerWalletUseCase.SettlePendingBalance(tx, walletUUID, settlement.GrossAmount, settlement.NetAmount)
+    }
+}
+
+// 4. Return updated balance to user
+```
+
+### Settlement Timeline
+
+```
+Day 1 (Monday) 10:00 AM - Customer pays IDR 100,000 via Virtual Account
+├── DOKU pending: +100,000 (gross)
+├── DOKU available: unchanged
+├── Ledger pending_balance: +100,000
+├── Ledger balance: unchanged
+└── LedgerSettlement: status = IN_PROGRESS, gross = 100,000, net = 95,560
+
+Day 2 (Tuesday) 1:00 PM - DOKU processes settlement (NO WEBHOOK)
+├── DOKU pending: 100,000 → 0
+├── DOKU available: 0 → 95,560
+├── Ledger: UNCHANGED (we don't know yet!)
+└── LedgerSettlement: still IN_PROGRESS
+
+Day 2 (Tuesday) 3:00 PM - User visits balance page
+├── Backend calls GetBalance API → pending: 0, available: 95,560
+├── Delta = 100,000 - 0 = 100,000 (settlement detected!)
+├── Process settlement: status → TRANSFERRED
+├── Ledger pending_balance: 100,000 → 0
+├── Ledger balance: 0 → 95,560
+└── User sees: available = 95,560, pending = 0
+```
+
+### Key Points
+
+| Aspect | Details |
+|--------|---------|
+| **Trigger** | User accessing balance page |
+| **Source of Truth** | DOKU GetBalance API |
+| **Detection Method** | Compare DOKU pending vs Ledger pending_balance |
+| **Processing Order** | FIFO (oldest settlements first) |
+| **Atomicity** | Single database transaction for all updates |
+| **Failure Handling** | If DOKU API fails, return cached ledger balance |
+
+### Fee Calculation During Reconciliation
+
+When processing settlements, the fee has already been calculated and stored:
+
+```
+LedgerSettlement record:
+├── gross_amount: 100,000  (what customer paid)
+├── net_amount: 95,560     (what merchant receives)
+└── fee_amount: 4,440      (DOKU fee + tax)
+
+Wallet update:
+├── pending_balance -= gross_amount (100,000)
+└── balance += net_amount (95,560)
+```
+
+The fee calculation functions (`CalculateSettlementFee`, `CalculateGrossAmount`) are used when **creating** the settlement record, not during reconciliation.

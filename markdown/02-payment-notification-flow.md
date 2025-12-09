@@ -311,10 +311,13 @@ func (h *webhookHandler) processSuccessfulPayment(
     }
     defer tx.Rollback()
     
-    // 2. Confirm payment in Ledger
-    _, err = h.ledgerPaymentUseCase.ConfirmPayment(tx, &ledger.LedgerPaymentConfirmPaymentRequest{
+    // 2. Get payment method from notification
+    paymentMethod := notification.Channel.ID.String
+    
+    // 3. Confirm payment in Ledger
+    confirmedPayment, err := h.ledgerPaymentUseCase.ConfirmPayment(tx, &ledger.LedgerPaymentConfirmPaymentRequest{
         GatewayRequestId:       notification.Transaction.OriginalRequestID.String,
-        PaymentMethod:          notification.Channel.ID.String,
+        PaymentMethod:          paymentMethod,
         PaymentDate:            time.Now(), // Or parse from notification
         GatewayReferenceNumber: getGatewayReference(notification),
     })
@@ -322,7 +325,38 @@ func (h *webhookHandler) processSuccessfulPayment(
         return err
     }
     
-    // 3. Commit transaction
+    // 4. Calculate settlement fee using actual payment method
+    // This gives us accurate net amount after DOKU fees
+    settlementResult, err := h.dokuSettlementUseCase.CalculateSettlementFee(
+        paymentMethod, 
+        float64(confirmedPayment.Amount),
+    )
+    if err != nil {
+        return err
+    }
+    
+    // 5. Create settlement record with IN_PROGRESS status
+    // Use invoice number as batch number for idempotency
+    // DOKU settles daily on weekdays at ~1 PM
+    estimatedSettlementDate := time.Now().AddDate(0, 0, 1) // Next day estimate
+    
+    _, err = h.ledgerSettlementUseCase.CreateSettlement(
+        tx,
+        confirmedPayment.LedgerAccountUUID,
+        confirmedPayment.InvoiceNumber, // batch_number for idempotency
+        estimatedSettlementDate,
+        confirmedPayment.Currency,
+        int64(settlementResult.GrossAmount),
+        int64(settlementResult.NetAmount),
+        "", // bankName - filled during disbursement
+        "", // bankAccountNumber - filled during disbursement
+        ledger_models.AccountTypeSubAccount,
+    )
+    if err != nil {
+        return err
+    }
+    
+    // 6. Commit transaction
     return tx.Commit()
 }
 ```
@@ -604,12 +638,32 @@ func (h *webhookHandler) processSuccessfulPayment(
 
 ---
 
-## Wallet Impact Summary
+## Wallet & Settlement Impact Summary
 
-| Notification Status | pending_balance | balance | income_accumulation |
-|---------------------|-----------------|---------|---------------------|
-| SUCCESS | +amount | - | +amount |
-| FAILED | - | - | - |
+| Notification Status | pending_balance | balance | income_accumulation | Settlement Created |
+|---------------------|-----------------|---------|---------------------|-------------------|
+| SUCCESS | +amount | - | +amount | Yes (IN_PROGRESS) |
+| FAILED | - | - | - | No |
+
+### Why Create Settlement on Payment Confirmation?
+
+**Important**: Settlements should be created when payment is confirmed (webhook SUCCESS), NOT when the payment link is created.
+
+**Correct Flow:**
+```
+Payment Link Created → Customer pays → Webhook SUCCESS → ConfirmPayment + CreateSettlement
+```
+
+**Why NOT at Payment Link Creation?**
+- Customer may abandon payment → orphaned settlement records
+- Customer may choose different payment method → wrong fee calculation
+- Payment may expire → cleanup needed for unused settlements
+
+**Benefits of Webhook-based Settlement Creation:**
+1. **Accurate Fee Calculation**: Uses actual payment method from DOKU (e.g., customer chose QRIS instead of VA)
+2. **No Orphaned Records**: Settlement only exists when money is actually received
+3. **Idempotency**: Uses invoice number as batch_number to prevent duplicates on webhook retries
+4. **Clean Ledger**: Only tracks money that actually moves
 
 ---
 
@@ -623,9 +677,14 @@ func (h *webhookHandler) processSuccessfulPayment(
 
 4. **Log Everything**: Log all incoming notifications with full payload for debugging and audit purposes.
 
-5. **Use Database Transactions**: Wrap payment status update and wallet balance update in a single transaction.
+5. **Use Database Transactions**: Wrap payment confirmation, settlement creation, and wallet balance update in a single transaction.
 
 6. **Async Processing**: For high-volume systems, consider queueing notifications for async processing while returning 200 immediately.
+
+7. **Create Settlement on Confirmation**: Always create the settlement record in the webhook handler after payment confirmation, not at payment link creation. This ensures:
+   - Accurate fee calculation based on actual payment method used
+   - No orphaned settlement records for abandoned payments
+   - Clean ledger state
 
 ---
 
