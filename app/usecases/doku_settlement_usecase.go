@@ -19,6 +19,7 @@ type dokuSettlementUseCase struct {
 }
 
 func NewDokuSettlementUseCase() DokuSettlementUseCaseInterface {
+	config.InitConfigFromEnv()
 	return &dokuSettlementUseCase{
 		cfg: config.Get(),
 	}
