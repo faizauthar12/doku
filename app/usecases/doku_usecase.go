@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/faizauthar12/doku/app/constants"
 	"github.com/faizauthar12/doku/app/models"
 	"github.com/faizauthar12/doku/app/requests"
 	"github.com/faizauthar12/doku/app/responses"
@@ -257,7 +258,51 @@ func (u *dokuUseCase) CreateAccount(request *requests.DokuCreateSubAccountReques
 	return createAccountResponse.Account, nil
 }
 
+func (u *dokuUseCase) adjustPaymentMethod(paymentMethod string) []string {
+
+	paymentMethods := []string{}
+
+	switch paymentMethod {
+	case constants.VIRTUAL_ACCOUNT:
+		paymentMethods = []string{
+			constants.BCA_VA,
+			constants.Mandiri_VA,
+			constants.BSI_VA,
+			constants.BRI_VA,
+			constants.BNI_VA,
+			constants.DOKU_VA,
+			constants.PERMATA_VA,
+			constants.CIMB_VA,
+			constants.DANAMON_VA,
+			constants.BTN_VA,
+			constants.BNC_VA,
+		}
+	case constants.QRIS:
+		paymentMethods = []string{
+			constants.QRIS,
+		}
+	case constants.CREDIT_CARD:
+		paymentMethods = []string{
+			constants.CREDIT_CARD,
+		}
+	case constants.PAYLATER:
+		paymentMethods = []string{
+			constants.PAYLATER_AKULAKU,
+			constants.PAYLATER_KREDIVO,
+			constants.PAYLATER_INDODANA,
+		}
+	}
+
+	return paymentMethods
+}
+
 func (u *dokuUseCase) AcceptPayment(request *requests.DokuCreatePaymentRequest) (*responses.DokuCreatePaymentHTTPResponse, *models.ErrorLog) {
+
+	if request.PaymentMethod == "" {
+		errorMessage := fmt.Sprintf("Payment method is required")
+		logData := helper.WriteLog(errors.New(errorMessage), http.StatusBadRequest, errorMessage)
+		return nil, logData
+	}
 
 	createPaymentPayload := &requests.DokuCreatePaymentHTTPRequest{
 		Order: &models.DokuOrder{
@@ -277,6 +322,9 @@ func (u *dokuUseCase) AcceptPayment(request *requests.DokuCreatePaymentRequest) 
 			},
 		},
 	}
+
+	paymentMethods := u.adjustPaymentMethod(request.PaymentMethod)
+	createPaymentPayload.Payment.PaymentMethodTypes = paymentMethods
 
 	createPaymentPayloadJson, err := json.Marshal(createPaymentPayload)
 	if err != nil {

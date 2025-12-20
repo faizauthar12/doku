@@ -6,8 +6,10 @@ import (
 	"os"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/faizauthar12/doku/app/config"
+	"github.com/faizauthar12/doku/app/constants"
 	"github.com/faizauthar12/doku/app/requests"
 	"github.com/faizauthar12/doku/app/usecases"
 )
@@ -28,15 +30,21 @@ func LoadEnv() {
 	config.InitConfig(string(rootPath) + `/.env`)
 }
 
-func TestCreatePayment(t *testing.T) {
+func TestCreatePaymentVirtualAccount(t *testing.T) {
 	LoadEnv()
 	dokuUseCase := usecases.NewDokuUseCase(config.Get().Doku.ClientID, config.Get().Doku.SecretKey, config.Get().Doku.PrivateKey)
 
+	timeNow := time.Now()
+	invoiceNumber := fmt.Sprintf("INV-%d", timeNow.Unix())
+
 	dokuCreatePaymentRequest := &requests.DokuCreatePaymentRequest{
-		Amount:        100000,
-		CustomerName:  "Faiz Authar",
-		CustomerEmail: "faiz+customer1@gmail.com",
-		SacID:         "SAC-8760-1762081713175",
+		Amount:         100000,
+		CustomerName:   "Faiz Authar",
+		CustomerEmail:  "faiz+customer1@gmail.com",
+		SacID:          "SAC-8720-1765811058905",
+		PaymentDueDate: 60,
+		InvoiceNumber:  invoiceNumber,
+		PaymentMethod:  constants.VIRTUAL_ACCOUNT,
 	}
 
 	resultCreatePayment, logData := dokuUseCase.AcceptPayment(dokuCreatePaymentRequest)
@@ -44,14 +52,41 @@ func TestCreatePayment(t *testing.T) {
 		t.Fatalf("Error creating payment: %+v", logData)
 	}
 
-	t.Logf("Result Create Payment: %+v\n", resultCreatePayment)
+	resultCreatePaymentJson, _ := json.Marshal(resultCreatePayment)
+	t.Logf("Result Create Payment: %s\n", resultCreatePaymentJson)
+}
+
+func TestCreatePaymentQris(t *testing.T) {
+	LoadEnv()
+	dokuUseCase := usecases.NewDokuUseCase(config.Get().Doku.ClientID, config.Get().Doku.SecretKey, config.Get().Doku.PrivateKey)
+
+	timeNow := time.Now()
+	invoiceNumber := fmt.Sprintf("INV-%d", timeNow.Unix())
+
+	dokuCreatePaymentRequest := &requests.DokuCreatePaymentRequest{
+		Amount:         100000,
+		CustomerName:   "Faiz Authar",
+		CustomerEmail:  "faiz+customer1@gmail.com",
+		SacID:          "SAC-8720-1765811058905",
+		PaymentDueDate: 60,
+		InvoiceNumber:  invoiceNumber,
+		PaymentMethod:  constants.QRIS,
+	}
+
+	resultCreatePayment, logData := dokuUseCase.AcceptPayment(dokuCreatePaymentRequest)
+	if logData != nil {
+		t.Fatalf("Error creating payment: %+v", logData)
+	}
+
+	resultCreatePaymentJson, _ := json.Marshal(resultCreatePayment)
+	t.Logf("Result Create Payment: %s\n", resultCreatePaymentJson)
 }
 
 func TestGetBalance(t *testing.T) {
 	LoadEnv()
 	dokuUseCase := usecases.NewDokuUseCase(config.Get().Doku.ClientID, config.Get().Doku.SecretKey, config.Get().Doku.PrivateKey)
 
-	sacID := "SAC-8760-1762081713175"
+	sacID := "SAC-8720-1765811058905"
 
 	resultGetBalance, logData := dokuUseCase.GetBalance(sacID)
 	if logData != nil {
