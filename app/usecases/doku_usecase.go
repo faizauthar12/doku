@@ -299,9 +299,7 @@ func (u *dokuUseCase) adjustPaymentMethod(paymentMethod string) []string {
 func (u *dokuUseCase) AcceptPayment(request *requests.DokuCreatePaymentRequest) (*responses.DokuCreatePaymentHTTPResponse, *models.ErrorLog) {
 
 	if request.PaymentMethod == "" {
-		errorMessage := fmt.Sprintf("Payment method is required")
-		logData := helper.WriteLog(errors.New(errorMessage), http.StatusBadRequest, errorMessage)
-		return nil, logData
+		request.PaymentMethod = constants.ALL
 	}
 
 	createPaymentPayload := &requests.DokuCreatePaymentHTTPRequest{
@@ -323,8 +321,10 @@ func (u *dokuUseCase) AcceptPayment(request *requests.DokuCreatePaymentRequest) 
 		},
 	}
 
-	paymentMethods := u.adjustPaymentMethod(request.PaymentMethod)
-	createPaymentPayload.Payment.PaymentMethodTypes = paymentMethods
+	if request.PaymentMethod != constants.ALL {
+		paymentMethods := u.adjustPaymentMethod(request.PaymentMethod)
+		createPaymentPayload.Payment.PaymentMethodTypes = paymentMethods
+	}
 
 	createPaymentPayloadJson, err := json.Marshal(createPaymentPayload)
 	if err != nil {

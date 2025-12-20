@@ -1,6 +1,8 @@
 package constants
 
 const (
+	ALL = "ALL"
+
 	VIRTUAL_ACCOUNT = "VIRTUAL_ACCOUNT"
 	BCA_VA          = "VIRTUAL_ACCOUNT_BCA"
 	Mandiri_VA      = "VIRTUAL_ACCOUNT_BANK_MANDIRI"
